@@ -1,4 +1,5 @@
-#pragma once
+#ifndef CHUNK_H
+#define CHUNK_H
 
 #include "Task.h"
 
@@ -41,3 +42,4 @@ struct Chunk
 	~Chunk() = default;
 };
 
+#endif

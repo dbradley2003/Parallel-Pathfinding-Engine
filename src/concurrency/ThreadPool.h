@@ -1,4 +1,5 @@
-#pragma once
+#ifndef THREAD_POOL_H
+#define THREAD_POOL_H
 
 #include <iostream>
 #include <vector>
@@ -18,6 +19,8 @@
 #define NO_REQUEST 0xFFFFFFFF
 #define NO_RESPONSE ((Message*)1)
 
+//#define MAX_THREADS 64
+
 class ThreadPool
 {
 public:
@@ -33,7 +36,6 @@ public:
 	static const unsigned int END_PARENT_SHIFT = 26;
 
 	static const unsigned int SIZE_THRESHOLD = 3; // N * ( 128 * 16 (size of Task) ) bytes
-	static const unsigned int MAX_THREADS = 64;
 
 	Maze* pMaze;
 	std::atomic<bool> done;
@@ -47,7 +49,7 @@ public:
 
 	bool s[MAX_THREADS];
 	std::atomic<unsigned int> r[MAX_THREADS];
-    std::vector<Message*> t;
+    Message *t[MAX_THREADS];
 	std::vector<std::thread> threads;
 	JoinThreads joiner;
 
@@ -264,11 +266,8 @@ public:
 				{
                    
                     Message* msg = t[i];
-
                     delete msg;
-                    
-                    t[i] = nullptr;
-                    
+                    t[i] = nullptr;                    
                     break;
                 }
 			}
@@ -451,7 +450,6 @@ public:
 		:pMaze(pMaze),
 		done(false),
 		prom(std::move(_prom)),
-        t(MAX_THREADS),
 		joiner(threads)
 	{
 
@@ -492,7 +490,7 @@ public:
 
 			for (unsigned i = 0; i < threadCount; ++i)
 			{
-				threads.emplace_back(&ThreadPool::workerThread, this, i);
+				threads.push_back(std::thread(&ThreadPool::workerThread, this, i));
 			}
 		}
 		catch (std::exception e)
@@ -513,3 +511,4 @@ public:
 	}
 };
 
+#endif

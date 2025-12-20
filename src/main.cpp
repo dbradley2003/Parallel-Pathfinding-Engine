@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <exception>
-#include <filesystem>
+
 #include "maze/Maze.h"
 
 #include "solvers/MazeSolverDFS.h"
@@ -16,7 +16,8 @@
 
 int main(int argc, char* argv[])
 {
-	char inFileName[INPUT_NAME_SIZE] = "mazes/Maze100Kx100K.data";
+	char inFileName[INPUT_NAME_SIZE] = "mazes/Maze20Kx20K_B.data";
+
 	Timer aTimer;
 	Timer bTimer;
 	Timer cTimer;

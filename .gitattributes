@@ -1,0 +1,6 @@
+# Enforce LF line endings in the repo
+* text=auto
+
+*.cpp text eol=lf
+*.h   text eol=lf
+*.data binary

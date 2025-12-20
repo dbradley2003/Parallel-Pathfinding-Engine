@@ -1,8 +1,8 @@
-
 #ifndef POSITION_MAZE_H
 #define POSITION_MAZE_H
 
 #include <cassert>
+
 #include "Direction.h"
 
 
