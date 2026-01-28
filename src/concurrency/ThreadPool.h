@@ -20,7 +20,6 @@
 #include "../structures/Task.h"
 
 #define NO_REQUEST 0xFFFFFFFF
-//#define MAX_THREADS 10
 
 struct alignas(std::hardware_destructive_interference_size) PaddedMessage {
     std::atomic<Message*> slot{ nullptr };
@@ -39,22 +38,16 @@ class ThreadPool
 public:
 	Maze* pMaze;
 	std::atomic<bool> done;
-
 	char padding[3];
 	std::atomic<int> intersectPos = -1;
 
 	std::promise<std::vector<Direction>*> prom;
 	std::vector<Frontier> frontiers;
-    
     std::array<PaddedStatus, MAX_THREADS> s;
     std::array<PaddedContainer, MAX_THREADS> r;
-   	//std::atomic<unsigned int> r[MAX_THREADS];
-
     std::array<PaddedMessage, MAX_THREADS> mailboxes;
-
 	std::vector<std::thread> threads;
 	JoinThreads joiner;
-
 	inline static thread_local unsigned myIndex; 
 
 	Direction getParentDirection(Position at, unsigned shift)
@@ -221,7 +214,7 @@ public:
 		unsigned int maxIndex = (unsigned int) threads.size() - 1;
 		std::uniform_int_distribution<unsigned int> dist(0, maxIndex);
 
-		r[i].val.store(i); //dummy value
+		r[i].val.store(i); //dummy value to not get requests from other threads
         unsigned int expected = NO_REQUEST;
 		while (!done)
 		{
@@ -253,6 +246,7 @@ public:
 	void updateStatus()
 	{
 		bool b = (frontiers[myIndex].size() > MAX_NUM_CHUNKS );
+
         // ignore write if possible to avoid false sharing
 		if (s[myIndex].status != b)
 		{
@@ -405,20 +399,17 @@ public:
 
 			Position startPos = this->pMaze->getStart();
 			ListDirection startMoves = this->pMaze->getMoves(startPos);
-
 			Position endPos = this->pMaze->getEnd();
 			ListDirection endMoves = this->pMaze->getMoves(endPos);
 
 			for (unsigned i = 0; i < threadCount; ++i)
 			{
 				frontiers.emplace_back();
-
 				if (startMoves.size() > 0)
 				{
 					frontiers[i].push(Task{ startPos,startMoves.pop_front(), A_FLAG });
 					continue;
 				}
-
 				if (endMoves.size() > 0)
 				{
 					frontiers[i].push(Task{ endPos,endMoves.pop_front(),B_FLAG });
@@ -434,15 +425,12 @@ public:
 		catch (std::exception e)
 		{
 			std::cout << "Error occurred creating thread\n";
-
 			done = true;
 		}
 	}
     
 	ThreadPool(const ThreadPool&) = delete;
-    
     ThreadPool& operator=(const ThreadPool&) = delete;
-	
     ~ThreadPool()
 	{
 		done = true;
