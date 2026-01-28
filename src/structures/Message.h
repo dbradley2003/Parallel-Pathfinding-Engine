@@ -4,7 +4,6 @@
 class Message
 {
 public:
-
 	enum class MessageType
 	{
 		RejectRequest,
@@ -12,11 +11,12 @@ public:
 		Success,
 		Uninitialized,
 	};
-
-	unsigned int senderIndex;
-	char pad2[4];
-	MessageType type;
-	char pad[4];
+    Message(MessageType const& type) : type_(type) {}
+    MessageType getType()
+    {
+        return this->type_;
+    }
+	MessageType type_;
 };
 
 #endif

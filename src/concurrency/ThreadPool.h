@@ -10,7 +10,6 @@
 #include <thread>
 #include <future>
 #include <optional>
-#include <memory>
 #include <new>
 #include <array>
 
@@ -21,7 +20,6 @@
 #include "../structures/Task.h"
 
 #define NO_REQUEST 0xFFFFFFFF
-#define NO_RESPONSE ((Message*)1)
 //#define MAX_THREADS 10
 
 struct alignas(std::hardware_destructive_interference_size) PaddedMessage {
@@ -41,9 +39,10 @@ public:
 	std::vector<Frontier> frontiers;
 
 	bool s[MAX_THREADS];
+
 	std::atomic<unsigned int> r[MAX_THREADS];
 
-    std::array<PaddedMessage, MAX_THREADS> t;
+    std::array<PaddedMessage, MAX_THREADS> mailboxes;
 
 	std::vector<std::thread> threads;
 	JoinThreads joiner;
@@ -178,42 +177,37 @@ public:
 
     void send(int threadId, Message* msg)
     {
-       t[threadId].slot.store(msg, std::memory_order_release); 
+        mailboxes[threadId].slot.store(msg, std::memory_order_release); 
     }
     
     Message* check(int threadId)
     {
-        return t[threadId].slot.load(std::memory_order_acquire);
+        return mailboxes[threadId].slot.load(std::memory_order_acquire);
     }
 
 	void reply(std::function<void(Frontier& other)> callback)
 	{
-        // other thread's index into the frontiers table
-		unsigned int j = r[myIndex];
-        
-		if (j == NO_REQUEST)
-		{
-			return;
-		}
+		unsigned int j = r[myIndex].load(std::memory_order_acquire);
 
+		if (j == NO_REQUEST)
+            return;
+	
 		callback(frontiers[j]);
-        
-        Message* msg = new Message();
-        msg->type = Message::MessageType::Success;
+        Message* msg = new Message(Message::MessageType::Success);
         this->send(j, msg);
-		r[myIndex] = NO_REQUEST;
+		r[myIndex].store(NO_REQUEST, std::memory_order_relaxed);
 	}
 
 	void rejectRequest()
 	{
-		unsigned int j = r[myIndex];
+		unsigned int j = r[myIndex].load(std::memory_order_acquire);
+
 		if (j == NO_REQUEST)
 			return;
 
-        Message* msg = new Message(); 
-        msg->type = Message::MessageType::RejectRequest;
+        Message* msg = new Message(Message::MessageType::RejectRequest); 
         this->send(j, msg);
-		r[myIndex] = NO_REQUEST;
+		r[myIndex].store(NO_REQUEST, std::memory_order_relaxed);
 	}
 
 	void acquire()
@@ -232,24 +226,25 @@ public:
 		while (!done)
 		{
 			unsigned int k = dist(gen);
-			if (s[k] && (r[k].compare_exchange_strong(expected, i)))
+			if (s[k] && (r[k].compare_exchange_strong(expected, i, std::memory_order_release, std::memory_order_relaxed)))
 			{
-				while (!this->check(i) && !done){
-                    //std::this_thread::yield();
+				while (!this->check(i) && !done)
+                {
+                    std::this_thread::yield();
                 }
 
                 if(done.load())
                     return;
 
                 Message* msg = this->check(i);
-                if(msg->type == Message::MessageType::Success) 
+                if(msg->getType() == Message::MessageType::Success) 
                 {
-                    t[i].slot.store(nullptr, std::memory_order_release);
+                    mailboxes[i].slot.store(nullptr, std::memory_order_release);
                     break;
                 }
                 else
                 {
-                   t[i].slot.store(nullptr, std::memory_order_release); 
+                   mailboxes[i].slot.store(nullptr, std::memory_order_release); 
                 }
 			}
 		}
