@@ -5,6 +5,10 @@
 #include <iostream>
 #include <string>
 
+#if defined(__SANITIZE_THREAD__)
+    #define NO_TSAN_FENCE 1
+#endif
+
 class Timer {
 private:
     // Use high_resolution_clock for maximum precision
@@ -14,15 +18,23 @@ private:
 
 public:
     void start() {
+#ifndef NO_TSAN_FENCE
         std::atomic_thread_fence(std::memory_order_seq_cst);
+#endif
         m_startTime = std::chrono::high_resolution_clock::now();
+#ifndef NO_TSAN_FENCE
         std::atomic_thread_fence(std::memory_order_seq_cst);
+#endif
     }
 
     void stop() {
+#ifndef NO_TSAN_FENCE
         std::atomic_thread_fence(std::memory_order_seq_cst);
+#endif
         m_endTime = std::chrono::high_resolution_clock::now();
+#ifndef NO_TSAN_FENCE
         std::atomic_thread_fence(std::memory_order_seq_cst);
+#endif
     }
 
     double elapsedMilliseconds() const {

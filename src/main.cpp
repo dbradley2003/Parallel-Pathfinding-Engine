@@ -16,7 +16,7 @@
 
 int main(int argc, char* argv[])
 {
-	char inFileName[INPUT_NAME_SIZE] = "mazes/Maze1Kx1K.data";
+	char inFileName[INPUT_NAME_SIZE] = "mazes/Maze20Kx20K_B.data";
 
 	Timer aTimer;
 	Timer bTimer;

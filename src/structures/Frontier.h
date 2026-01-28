@@ -1,5 +1,6 @@
 #ifndef FRONTIER_H
 #define FRONTIER_H
+
 #include <optional>
 #include "Chunk.h"
 #include "../constants.h"
@@ -8,7 +9,6 @@ class Frontier
 {
 	Chunk* head;
 	Chunk* tail;
-
 	unsigned int totalChunks;
 	char pad[4];
 
@@ -17,7 +17,8 @@ class Frontier
 		Chunk* oldHead = head;
 		head = oldHead->prev;
 
-		if (oldHead == tail) tail = head;
+		if (oldHead == tail) 
+            tail = head;
 
 		delete oldHead;
 		totalChunks--;
@@ -43,41 +44,27 @@ class Frontier
 public:
 	void split(Frontier& other)
 	{
-		if (totalChunks < SPLIT_MIN_CHUNKS)
-		{
+		if (this->totalChunks < SPLIT_MIN_CHUNKS)
 			return;
-		}
 
-		Chunk* curr = other.head;
+		unsigned int numKeepChunks = totalChunks - (totalChunks / 2);
+		unsigned int numGiveChunks = totalChunks / 2;
 
-		while (curr)
+		Chunk* pOtherNewHead = this->tail;
+		for (unsigned int i = 1; i < numGiveChunks; i++)
 		{
-			Chunk* prev = curr->prev;
-			delete curr;
-			curr = prev;
-		}
-
-		unsigned int keepAmount = totalChunks - (totalChunks / 2);
-		unsigned int giveAmount = totalChunks / 2;
-
-		Chunk* newThiefTail = this->tail;
-
-		for (unsigned int i = 1; i < giveAmount; i++)
-		{
-			if (newThiefTail->next == nullptr)
-			{
+			if (pOtherNewHead->next == nullptr)
 				break;
-			}
-			newThiefTail = newThiefTail->next;
+
+			pOtherNewHead = pOtherNewHead->next;
 		}
 
-		Chunk* newOwnerTail = newThiefTail->next;
-
-		other.head = newThiefTail;
+		other.head = pOtherNewHead;
 		other.tail = this->tail;
-		other.totalChunks = giveAmount;
-
-		this->tail = newOwnerTail;
+		other.totalChunks = numGiveChunks;
+        
+        // assign node before other's head as this frontier's tail
+		this->tail = pOtherNewHead->next;
 
 		if (this->tail != nullptr)
 		{
@@ -87,16 +74,14 @@ public:
 		{
 			this->head = nullptr;
 		}
-
-		this->totalChunks = keepAmount;
-
+		this->totalChunks = numKeepChunks;
 	}
 
 	void push(Task t)
 	{
 		if (head != nullptr && !head->isFull())
 		{
-			head->data[head->top++] = t;
+			head->data[head->top++] = std::move(t);
 		}
         else
         {
@@ -107,28 +92,31 @@ public:
         }
 	}
 
-
     std::optional<Task> tryPop()
 	{
-            if (this->isEmpty()) return std::optional<Task>(std::nullopt);
-            else 
-            {
-                if (head->isEmpty()) { pop_chunk(); }
-			    return std::optional<Task>(std::move(head->data[--head->top])); 
-            }
+        if (this->isEmpty()) 
+        { 
+            return std::optional<Task>(std::nullopt);
+        }
+        else 
+        {
+            if (head->isEmpty()) 
+                pop_chunk();
+
+			return std::optional<Task>(std::move(head->data[--head->top])); 
+        }
 	}
 
 	bool isEmpty()
 	{
 		if (head == nullptr)
-		{
 			return true;
-		}
 
 		return (head == tail && head->isEmpty()); 
 	}
 
-	size_t size() {
+	size_t size() 
+    {
 		return totalChunks;
 	}
 
@@ -141,9 +129,7 @@ public:
 
 	~Frontier()
 	{
-
 		Chunk* curr = head;
-
 		while (curr != nullptr)
 		{
 			Chunk* prev = curr->prev;
