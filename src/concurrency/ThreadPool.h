@@ -26,6 +26,14 @@ struct alignas(std::hardware_destructive_interference_size) PaddedMessage {
     std::atomic<Message*> slot{ nullptr };
 };
 
+struct alignas(std::hardware_destructive_interference_size) PaddedContainer {
+    std::atomic<unsigned int> val{NO_REQUEST};
+};
+
+struct alignas(std::hardware_destructive_interference_size) PaddedStatus {
+     bool status{false};
+};
+
 class ThreadPool
 {
 public:
@@ -37,10 +45,10 @@ public:
 
 	std::promise<std::vector<Direction>*> prom;
 	std::vector<Frontier> frontiers;
-
-	bool s[MAX_THREADS];
-
-	std::atomic<unsigned int> r[MAX_THREADS];
+    
+    std::array<PaddedStatus, MAX_THREADS> s;
+    std::array<PaddedContainer, MAX_THREADS> r;
+   	//std::atomic<unsigned int> r[MAX_THREADS];
 
     std::array<PaddedMessage, MAX_THREADS> mailboxes;
 
@@ -90,7 +98,6 @@ public:
 			if (mFlag == A_FLAG)
 			{
 				MarkParentDirection(came_from, at, START_PARENT_SHIFT);
-
 				if ((this->pMaze->poMazeData[at.row * this->pMaze->width + at.col].fetch_or(A_FLAG) & B_FLAG) == B_FLAG)
 				{
 					this->done = true;
@@ -121,7 +128,6 @@ public:
 			if (mFlag == B_FLAG)
 			{
 				MarkParentDirection(came_from, at, END_PARENT_SHIFT);
-
 				if ((this->pMaze->poMazeData[at.row * this->pMaze->width + at.col].fetch_or(B_FLAG) & A_FLAG) == A_FLAG)
 				{
 					this->done = true;
@@ -167,12 +173,7 @@ public:
 
 	bool hasIncomingRequest()
 	{
-		unsigned j = r[myIndex];
-		if (j == NO_REQUEST)
-		{
-			return false;
-		}
-		return true;
+		return r[myIndex].val.load(std::memory_order_acquire) != NO_REQUEST;
 	}
 
     void send(int threadId, Message* msg)
@@ -187,7 +188,7 @@ public:
 
 	void reply(std::function<void(Frontier& other)> callback)
 	{
-		unsigned int j = r[myIndex].load(std::memory_order_acquire);
+		unsigned int j = r[myIndex].val.load(std::memory_order_acquire);
 
 		if (j == NO_REQUEST)
             return;
@@ -195,42 +196,40 @@ public:
 		callback(frontiers[j]);
         Message* msg = new Message(Message::MessageType::Success);
         this->send(j, msg);
-		r[myIndex].store(NO_REQUEST, std::memory_order_relaxed);
+		r[myIndex].val.store(NO_REQUEST, std::memory_order_relaxed);
 	}
 
 	void rejectRequest()
 	{
-		unsigned int j = r[myIndex].load(std::memory_order_acquire);
-
+		unsigned int j = r[myIndex].val.load(std::memory_order_acquire);
 		if (j == NO_REQUEST)
 			return;
 
         Message* msg = new Message(Message::MessageType::RejectRequest); 
         this->send(j, msg);
-		r[myIndex].store(NO_REQUEST, std::memory_order_relaxed);
+		r[myIndex].val.store(NO_REQUEST, std::memory_order_relaxed);
 	}
 
 	void acquire()
 	{
 		unsigned int i = myIndex;
-		if (threads.empty()) return;
+		if (threads.empty()) 
+            return;
         
 		thread_local std::random_device rd;
 		thread_local std::mt19937 gen(rd());
 		unsigned int maxIndex = (unsigned int) threads.size() - 1;
 		std::uniform_int_distribution<unsigned int> dist(0, maxIndex);
 
-		r[i] = i; //dummy value
+		r[i].val.store(i); //dummy value
         unsigned int expected = NO_REQUEST;
-
 		while (!done)
 		{
 			unsigned int k = dist(gen);
-			if (s[k] && (r[k].compare_exchange_strong(expected, i, std::memory_order_release, std::memory_order_relaxed)))
+			if (s[k].status && (r[k].val.compare_exchange_strong(expected, i, std::memory_order_release, std::memory_order_relaxed)))
 			{
 				while (!this->check(i) && !done)
                 {
-                    std::this_thread::yield();
                 }
 
                 if(done.load())
@@ -248,15 +247,16 @@ public:
                 }
 			}
 		}
-		r[i] = NO_REQUEST;
+		r[i].val.store(NO_REQUEST);
 	}
 
 	void updateStatus()
 	{
 		bool b = (frontiers[myIndex].size() > MAX_NUM_CHUNKS );
-		if (s[myIndex] != b)
+        // ignore write if possible to avoid false sharing
+		if (s[myIndex].status != b)
 		{
-			s[myIndex] = b;
+			s[myIndex].status = b;
 		}
 	}
 
@@ -270,7 +270,7 @@ public:
 		int finalRow = finalIdx / pMaze->width;
 		int finalCol = finalIdx % pMaze->width;
 
-		Position intersectPosition{ finalRow,finalCol };
+		Position intersectPosition{ finalRow, finalCol };
 		
 		Position pStart = intersectPosition;
 		Position pEnd = intersectPosition;
@@ -306,13 +306,11 @@ public:
 
 		pCurr = intersectPosition;
 		index = lenA;
-
 		while (index < finalPath->size())
 		{
 			next = getParentDirection(pCurr, END_PARENT_SHIFT);
 			pCurr = pCurr.move(next);
 			(*finalPath)[index] = next;
-			
 			index++;
 		}
 		this->prom.set_value(finalPath);
@@ -322,10 +320,7 @@ public:
 	{
 		myIndex = mIndex;
 		Frontier& frontier = this->frontiers[myIndex];
-
 		Choice curr{};
-		//Task tsk{};
-        
 		try {
 			while (!done)
 			{
@@ -337,12 +332,9 @@ public:
 				{
 					if (hasIncomingRequest())
 					{
-						size_t sz = frontier.size();
-
-						if (sz > MAX_NUM_CHUNKS)
+						if (frontier.size() > MAX_NUM_CHUNKS)
 						{
 							reply([&frontier](Frontier& other) {
-                                // split frontier with requesting thread
 								frontier.split(other); 
 								});
 						}
@@ -353,24 +345,18 @@ public:
 					}
 
                     std::optional<Task> tsk = frontier.tryPop();
-					if (!tsk.has_value()) continue;
-                    
-					unsigned int mFlag = tsk.value().flag;
-					curr = follow(tsk.value().at, tsk.value().dir, mFlag);
 
-					if (curr.pChoices.size() == 0) continue;
+                    if (tsk.has_value()) {
+                        unsigned int collisionFlag = tsk.value().flag;
+				        curr = follow(tsk.value().at, tsk.value().dir, collisionFlag);
 
-					Direction myDir = curr.pChoices.pop_front();
-					ListDirection mvs = curr.pChoices;
+                        while(curr.pChoices.size() > 0)
+                        {
+                            frontier.push(Task{curr.at, curr.pChoices.pop_front(), collisionFlag});
+                        }
 
-					while (mvs.size() > 0)
-					{
-						Direction dir = mvs.pop_front();
-						frontier.push(Task{ curr.at, dir, mFlag });
-					}
-
-					frontier.push(Task{ curr.at,myDir, mFlag });
-					updateStatus();
+				        updateStatus();
+                    }
 				}
 			}
 		}
@@ -404,7 +390,6 @@ public:
 		default:
 			break;
 		}
-
 		this->pMaze->poMazeData[pos.row * pMaze->width + pos.col] = newValue;
 	}
 
@@ -424,12 +409,6 @@ public:
 			Position endPos = this->pMaze->getEnd();
 			ListDirection endMoves = this->pMaze->getMoves(endPos);
 
-            for(int i{}; i < MAX_THREADS; ++i)
-            {
-                r[i].store(NO_REQUEST);
-                s[i] = false;
-            }
-             
 			for (unsigned i = 0; i < threadCount; ++i)
 			{
 				frontiers.emplace_back();
