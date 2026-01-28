@@ -9,34 +9,28 @@
 #include <random>
 #include <thread>
 #include <future>
+#include <optional>
+#include <memory>
+#include <new>
+#include <array>
 
 #include "JoinThreads.h"
-
+#include "../constants.h"
 #include "../structures/Frontier.h"
 #include "../structures/Message.h"
 #include "../structures/Task.h"
 
 #define NO_REQUEST 0xFFFFFFFF
 #define NO_RESPONSE ((Message*)1)
+//#define MAX_THREADS 10
 
-//#define MAX_THREADS 64
+struct alignas(std::hardware_destructive_interference_size) PaddedMessage {
+    std::atomic<Message*> slot{ nullptr };
+};
 
 class ThreadPool
 {
 public:
-	static const unsigned int A_FLAG = 0x8;
-	static const unsigned int B_FLAG = 0x4;
-
-	static const unsigned int DIR_FROM_NORTH = 0;
-	static const unsigned int DIR_FROM_SOUTH = 2;
-	static const unsigned int DIR_FROM_EAST = 1;
-	static const unsigned int DIR_FROM_WEST = 3;
-
-	static const unsigned int START_PARENT_SHIFT = 28;
-	static const unsigned int END_PARENT_SHIFT = 26;
-
-	static const unsigned int SIZE_THRESHOLD = 3; // N * ( 128 * 16 (size of Task) ) bytes
-
 	Maze* pMaze;
 	std::atomic<bool> done;
 
@@ -44,23 +38,22 @@ public:
 	std::atomic<int> intersectPos = -1;
 
 	std::promise<std::vector<Direction>*> prom;
-
 	std::vector<Frontier> frontiers;
 
 	bool s[MAX_THREADS];
 	std::atomic<unsigned int> r[MAX_THREADS];
-    Message *t[MAX_THREADS];
+
+    std::array<PaddedMessage, MAX_THREADS> t;
+
 	std::vector<std::thread> threads;
 	JoinThreads joiner;
 
-	inline static thread_local unsigned myIndex; // thread local index
+	inline static thread_local unsigned myIndex; 
 
 	Direction getParentDirection(Position at, unsigned shift)
 	{
 		unsigned int cell = pMaze->getCell(at);
-
 		unsigned int parentDirection = (cell >> shift) & 0x3;
-
 		Direction go_to = Direction::Uninitialized;
 
 		switch (parentDirection)
@@ -90,13 +83,8 @@ public:
 		Direction came_from = reverseDir(dir);
 		at = at.move(go_to);
 
-		do
-		{
-			if (done.load())
-			{
-				break;
-			}
-
+		do {
+			if (done.load()) break;
 			int intersectIndex = (at.row * pMaze->width) + at.col;
 			int expected = -1;
 
@@ -181,105 +169,96 @@ public:
 	bool hasIncomingRequest()
 	{
 		unsigned j = r[myIndex];
-
 		if (j == NO_REQUEST)
 		{
 			return false;
 		}
-
 		return true;
 	}
 
+    void send(int threadId, Message* msg)
+    {
+       t[threadId].slot.store(msg, std::memory_order_release); 
+    }
+    
+    Message* check(int threadId)
+    {
+        return t[threadId].slot.load(std::memory_order_acquire);
+    }
+
 	void reply(std::function<void(Frontier& other)> callback)
 	{
+        // other thread's index into the frontiers table
 		unsigned int j = r[myIndex];
-
+        
 		if (j == NO_REQUEST)
 		{
 			return;
 		}
 
 		callback(frontiers[j]);
-
-		Message* msg = new Message();
-		msg->type = Message::MessageType::Success;
-
-		t[j] = msg;
+        
+        Message* msg = new Message();
+        msg->type = Message::MessageType::Success;
+        this->send(j, msg);
 		r[myIndex] = NO_REQUEST;
 	}
 
 	void rejectRequest()
 	{
 		unsigned int j = r[myIndex];
-        
 		if (j == NO_REQUEST)
-		{
 			return;
-		}
-        
-		t[j] = nullptr;
+
+        Message* msg = new Message(); 
+        msg->type = Message::MessageType::RejectRequest;
+        this->send(j, msg);
 		r[myIndex] = NO_REQUEST;
 	}
 
 	void acquire()
 	{
 		unsigned int i = myIndex;
-
-		if (threads.empty())
-		{
-			return;
-		}
+		if (threads.empty()) return;
         
 		thread_local std::random_device rd;
 		thread_local std::mt19937 gen(rd());
-
 		unsigned int maxIndex = (unsigned int) threads.size() - 1;
 		std::uniform_int_distribution<unsigned int> dist(0, maxIndex);
 
 		r[i] = i; //dummy value
-        
-		while (true)
+        unsigned int expected = NO_REQUEST;
+
+		while (!done)
 		{
-            if(done)
-            {
-                break;
-            }
-
-			t[i] = nullptr;
-
 			unsigned int k = dist(gen);
-
-			unsigned int expected = NO_REQUEST;
-
-			if (s[k] && (r[k].compare_exchange_weak(expected, i)))
+			if (s[k] && (r[k].compare_exchange_strong(expected, i)))
 			{
-				while (t[i] == nullptr && !done)
-				{
-				}
+				while (!this->check(i) && !done){
+                    //std::this_thread::yield();
+                }
 
-				if (done)
-				{
-					return;
-				}
+                if(done.load())
+                    return;
 
-				if (t[i] != nullptr)
-				{
-                   
-                    Message* msg = t[i];
-                    delete msg;
-                    t[i] = nullptr;                    
+                Message* msg = this->check(i);
+                if(msg->type == Message::MessageType::Success) 
+                {
+                    t[i].slot.store(nullptr, std::memory_order_release);
                     break;
                 }
+                else
+                {
+                   t[i].slot.store(nullptr, std::memory_order_release); 
+                }
 			}
-            
 		}
 		r[i] = NO_REQUEST;
 	}
 
 	void updateStatus()
 	{
-		bool b = (frontiers[myIndex].size() > SIZE_THRESHOLD);
-
+		bool b = (frontiers[myIndex].size() > MAX_NUM_CHUNKS );
 		if (s[myIndex] != b)
 		{
 			s[myIndex] = b;
@@ -320,15 +299,13 @@ public:
 		
 		Position pCurr;
 		pCurr = intersectPosition;
-
 		int index = lenA - 1;
-		
+
 		while (index >= 0)
 		{
 			next = getParentDirection(pCurr, START_PARENT_SHIFT);
 			pCurr = pCurr.move(next);
 			(*finalPath)[index] = reverseDir(next);
-			
 			index--;
 		}
 
@@ -352,7 +329,7 @@ public:
 		Frontier& frontier = this->frontiers[myIndex];
 
 		Choice curr{};
-		Task tsk{};
+		//Task tsk{};
         
 		try {
 			while (!done)
@@ -367,11 +344,11 @@ public:
 					{
 						size_t sz = frontier.size();
 
-
-						if (sz > SIZE_THRESHOLD)
+						if (sz > MAX_NUM_CHUNKS)
 						{
 							reply([&frontier](Frontier& other) {
-								frontier.split(other);
+                                // split frontier with requesting thread
+								frontier.split(other); 
 								});
 						}
 						else
@@ -380,20 +357,13 @@ public:
 						}
 					}
 
-					if (!(frontier.tryPop(tsk)))
-					{
-						continue;
-					}
+                    std::optional<Task> tsk = frontier.tryPop();
+					if (!tsk.has_value()) continue;
+                    
+					unsigned int mFlag = tsk.value().flag;
+					curr = follow(tsk.value().at, tsk.value().dir, mFlag);
 
-					unsigned int myFlag = tsk.flag;
-
-					curr = follow(tsk.at, tsk.dir, myFlag);
-
-					if (curr.pChoices.size() == 0)
-					{
-						continue;
-					}
-
+					if (curr.pChoices.size() == 0) continue;
 
 					Direction myDir = curr.pChoices.pop_front();
 					ListDirection mvs = curr.pChoices;
@@ -401,12 +371,10 @@ public:
 					while (mvs.size() > 0)
 					{
 						Direction dir = mvs.pop_front();
-						Position nextPos = curr.at.move(dir);
-						frontier.push(Task{ curr.at, dir, myFlag });
+						frontier.push(Task{ curr.at, dir, mFlag });
 					}
 
-
-					frontier.push(Task{ curr.at,myDir, myFlag });
+					frontier.push(Task{ curr.at,myDir, mFlag });
 					updateStatus();
 				}
 			}
@@ -419,7 +387,6 @@ public:
 
 	void MarkParentDirection(Direction dir, Position pos, unsigned shift)
 	{
-
 		unsigned int oldValue = pMaze->poMazeData[pos.row * pMaze->width + pos.col].load();
 		unsigned int newValue = oldValue;
 
@@ -452,9 +419,7 @@ public:
 		prom(std::move(_prom)),
 		joiner(threads)
 	{
-
 		unsigned const threadCount = std::thread::hardware_concurrency();
-        
 		try {
 			frontiers.reserve(threadCount);
 
@@ -467,7 +432,6 @@ public:
             for(int i{}; i < MAX_THREADS; ++i)
             {
                 r[i].store(NO_REQUEST);
-                t[i] = nullptr;
                 s[i] = false;
             }
              

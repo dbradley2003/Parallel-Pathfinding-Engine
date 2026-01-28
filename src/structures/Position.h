@@ -3,7 +3,7 @@
 
 #include <cassert>
 
-#include "Direction.h"
+#include "../maze/Direction.h"
 
 
 class Position

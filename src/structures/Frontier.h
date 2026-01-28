@@ -1,7 +1,8 @@
 #ifndef FRONTIER_H
 #define FRONTIER_H
-
+#include <optional>
 #include "Chunk.h"
+#include "../constants.h"
 
 class Frontier
 {
@@ -14,13 +15,9 @@ class Frontier
 	void pop_chunk()
 	{
 		Chunk* oldHead = head;
-
 		head = oldHead->prev;
 
-		if (oldHead == tail)
-		{
-			tail = head;
-		}
+		if (oldHead == tail) tail = head;
 
 		delete oldHead;
 		totalChunks--;
@@ -28,30 +25,25 @@ class Frontier
 
 	void push_chunk(Chunk* newChunk)
 	{
-
-		if (head == nullptr)
+		if (!head)
 		{
 			head = newChunk;
 			tail = head;
-			return;
 		}
-
-		Chunk* oldHead = head;
-		newChunk->prev = oldHead;
-		oldHead->next = newChunk;
-		newChunk->next = nullptr;
-		head = newChunk;
-	}
-
-	Chunk* get_tail()
-	{
-		return tail;
+        else
+        {
+		    Chunk* old = head;
+		    newChunk->prev = old;
+		    old->next = newChunk;
+		    newChunk->next = nullptr;
+		    head = newChunk;
+        }
 	}
 
 public:
 	void split(Frontier& other)
 	{
-		if (totalChunks < 2)
+		if (totalChunks < SPLIT_MIN_CHUNKS)
 		{
 			return;
 		}
@@ -102,56 +94,28 @@ public:
 
 	void push(Task t)
 	{
-		if (head && !head->isFull())
+		if (head != nullptr && !head->isFull())
 		{
 			head->data[head->top++] = t;
-			return;
 		}
-
-		Chunk* newChunk = new Chunk();
-		newChunk->data[newChunk->top++] = t;
-		push_chunk(newChunk);
-		totalChunks++;
+        else
+        {
+		    Chunk* newChunk = new Chunk();
+		    newChunk->data[newChunk->top++] = std::move(t);
+		    this->push_chunk(newChunk);
+		    totalChunks++;
+        }
 	}
 
 
-	bool tryPop(Task& t)
+    std::optional<Task> tryPop()
 	{
-
-		if (totalChunks < 3)
-		{
-
-			if (head == nullptr)
-			{
-				return false;
-			}
-
-			if (head->isEmpty())
-			{
-				if (head == tail)
-				{
-					return false;
-				}
-
-				pop_chunk();
-				t = head->data[--head->top];
-				return true;
-			}
-
-			t = head->data[--head->top];
-			return true;
-		}
-
-
-		if (!head->isEmpty())
-		{
-			t = head->data[--head->top];
-			return true;
-		}
-
-		pop_chunk();
-		t = head->data[--head->top];
-		return true;
+            if (this->isEmpty()) return std::optional<Task>(std::nullopt);
+            else 
+            {
+                if (head->isEmpty()) { pop_chunk(); }
+			    return std::optional<Task>(std::move(head->data[--head->top])); 
+            }
 	}
 
 	bool isEmpty()
@@ -160,7 +124,8 @@ public:
 		{
 			return true;
 		}
-		return (head == tail) && (head->top == 0);
+
+		return (head == tail && head->isEmpty()); 
 	}
 
 	size_t size() {
@@ -178,7 +143,8 @@ public:
 	{
 
 		Chunk* curr = head;
-		while (curr)
+
+		while (curr != nullptr)
 		{
 			Chunk* prev = curr->prev;
 			delete curr;

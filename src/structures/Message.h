@@ -1,10 +1,6 @@
 #ifndef MESSAGE_H
 #define MESSAGE_H
 
-#include <functional>
-
-#include "Frontier.h"
-
 class Message
 {
 public:
@@ -17,8 +13,6 @@ public:
 		Uninitialized,
 	};
 
-
-	std::function<void(Frontier& other)> callback;
 	unsigned int senderIndex;
 	char pad2[4];
 	MessageType type;

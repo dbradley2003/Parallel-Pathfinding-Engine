@@ -1,16 +1,15 @@
 #ifndef CHUNK_H
 #define CHUNK_H
 
+#include <array>
 #include "Task.h"
-
+#include "../constants.h"
 struct Chunk
 {
-	static const unsigned int CHUNK_CAPACITY = 127;
-
 	Chunk* next = nullptr;
 	Chunk* prev = nullptr;
 	unsigned int top = 0;
-	Task data[CHUNK_CAPACITY];
+    std::array<Task,CHUNK_CAPACITY> data;
 	char padding[4];
 
 
