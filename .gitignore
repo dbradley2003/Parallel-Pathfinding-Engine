@@ -9,6 +9,7 @@ build/
 out/
 bin/
 
+.idea/
 
 
 # User-specific files

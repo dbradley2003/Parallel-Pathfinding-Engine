@@ -2,174 +2,139 @@
 #define FRONTIER_H
 
 #include <optional>
-#include "Chunk.h"
+
 #include "../constants.h"
+#include "Chunk.h"
 
-class Frontier
-{
-	Chunk* head;
-	Chunk* tail;
-	unsigned int totalChunks;
-	char pad[4];
+class Frontier {
+  Chunk *head;
+  Chunk *tail;
+  unsigned int totalChunks;
 
-	void pop_chunk()
-	{
-		Chunk* oldHead = head;
-		head = oldHead->prev;
+  void pop_chunk() {
+    const Chunk *oldHead = head;
+    head = oldHead->prev;
 
-		if (oldHead == tail) 
-            tail = head;
+    if (oldHead == tail)
+      tail = head;
 
-		delete oldHead;
-		totalChunks--;
-	}
+    delete oldHead;
+    totalChunks--;
+  }
 
-	void push_chunk(Chunk* newChunk)
-	{
-		if (!head)
-		{
-			head = newChunk;
-			tail = head;
-		}
-        else
-        {
-		    Chunk* old = head;
-		    newChunk->prev = old;
-		    old->next = newChunk;
-		    newChunk->next = nullptr;
-		    head = newChunk;
-        }
-	}
+  void push_chunk(Chunk *newChunk) {
+    if (!head) {
+      head = newChunk;
+      tail = head;
+    } else {
+      Chunk *old = head;
+      newChunk->prev = old;
+      old->next = newChunk;
+      newChunk->next = nullptr;
+      head = newChunk;
+    }
+  }
 
 public:
-	void split(Frontier& other)
-	{
-		if (this->totalChunks < SPLIT_MIN_CHUNKS)
-			return;
+  void split(Frontier &other) {
+    if (this->totalChunks < SPLIT_MIN_CHUNKS)
+      return;
 
-		unsigned int numKeepChunks = totalChunks - (totalChunks / 2);
-		unsigned int numGiveChunks = totalChunks / 2;
+    const unsigned int numKeepChunks = totalChunks - (totalChunks / 2);
+    const unsigned int numGiveChunks = totalChunks / 2;
 
-		Chunk* pOtherNewHead = this->tail;
-		for (unsigned int i = 1; i < numGiveChunks; i++)
-		{
-			if (pOtherNewHead->next == nullptr)
-				break;
+    Chunk *pOtherNewHead = this->tail;
+    for (unsigned int i = 1; i < numGiveChunks; i++) {
+      if (pOtherNewHead->next == nullptr)
+        break;
 
-			pOtherNewHead = pOtherNewHead->next;
-		}
+      pOtherNewHead = pOtherNewHead->next;
+    }
 
-		other.head = pOtherNewHead;
-		other.tail = this->tail;
-		other.totalChunks = numGiveChunks;
-        
-        // assign node before other's head as this frontier's tail
-		this->tail = pOtherNewHead->next;
+    other.head = pOtherNewHead;
+    other.tail = this->tail;
+    other.totalChunks = numGiveChunks;
 
-		if (this->tail != nullptr)
-		{
-			this->tail->prev = nullptr;
-		}
-		else
-		{
-			this->head = nullptr;
-		}
-		this->totalChunks = numKeepChunks;
-	}
+    // assign node before other's head as this frontier's tail
+    this->tail = pOtherNewHead->next;
 
-	void push(Task t)
-	{
-		if (head != nullptr && !head->isFull())
-		{
-			head->data[head->top++] = std::move(t);
-		}
-        else
-        {
-		    Chunk* newChunk = new Chunk();
-		    newChunk->data[newChunk->top++] = std::move(t);
-		    this->push_chunk(newChunk);
-		    totalChunks++;
-        }
-	}
+    if (this->tail != nullptr) {
+      this->tail->prev = nullptr;
+    } else {
+      this->head = nullptr;
+    }
+    this->totalChunks = numKeepChunks;
+  }
 
-    std::optional<Task> tryPop()
-	{
-        if (this->isEmpty()) 
-        { 
-            return std::optional<Task>(std::nullopt);
-        }
-        else 
-        {
-            if (head->isEmpty()) 
-                pop_chunk();
+  void push(Task t) {
+    if (head != nullptr && !head->isFull()) {
+      head->data[head->top++] = t;
+    } else {
+      auto *newChunk = new Chunk();
+      newChunk->data[newChunk->top++] = t;
+      this->push_chunk(newChunk);
+      totalChunks++;
+    }
+  }
 
-			return std::optional<Task>(std::move(head->data[--head->top])); 
-        }
-	}
+  std::optional<Task> tryPop() {
+    if (this->isEmpty()) {
+      return std::nullopt;
+    }
+    if (head->isEmpty())
+      pop_chunk();
 
-	bool isEmpty()
-	{
-		if (head == nullptr)
-			return true;
+    return head->data[--head->top];
+  }
 
-		return (head == tail && head->isEmpty()); 
-	}
+  [[nodiscard]] bool isEmpty() const {
+    if (head == nullptr)
+      return true;
 
-	size_t size() 
-    {
-		return totalChunks;
-	}
+    return (head == tail && head->isEmpty());
+  }
 
-	Frontier()
-	{
-		head = new Chunk();
-		tail = head;
-		totalChunks = 1;
-	}
+  [[nodiscard]] size_t size() const { return totalChunks; }
 
-	~Frontier()
-	{
-		Chunk* curr = head;
-		while (curr != nullptr)
-		{
-			Chunk* prev = curr->prev;
-			delete curr;
-			curr = prev;
-		}
-	}
+  Frontier() : head(new Chunk()), tail(head), totalChunks(1) {}
 
-	Frontier(Frontier&& other) noexcept
-	{
-		head = other.head;
-		tail = other.tail;
-		totalChunks = other.totalChunks;
+  ~Frontier() {
+    const Chunk *curr = head;
+    while (curr != nullptr) {
+      const Chunk *prev = curr->prev;
+      delete curr;
+      curr = prev;
+    }
+  }
 
-		other.head = nullptr;
-		other.tail = nullptr;
-		other.totalChunks = 0;
-	}
+  Frontier(Frontier &&other) noexcept {
+    head = other.head;
+    tail = other.tail;
+    totalChunks = other.totalChunks;
 
-	Frontier& operator=(Frontier&& other) noexcept
-	{
-		if (this != &other)
-		{
-			Chunk* curr = head;
-			while (curr)
-			{
-				Chunk* prev = curr->prev;
-				delete curr;
-				curr = prev;
-			}
-			head = other.head;
-			tail = other.tail;
-			totalChunks = other.totalChunks;
+    other.head = nullptr;
+    other.tail = nullptr;
+    other.totalChunks = 0;
+  }
 
-			other.head = nullptr;
-			other.tail = nullptr;
-			other.totalChunks = 0;
-		}
-        return *this;
-	}
+  Frontier &operator=(Frontier &&other) noexcept {
+    if (this != &other) {
+      const Chunk *curr = head;
+      while (curr) {
+        const Chunk *prev = curr->prev;
+        delete curr;
+        curr = prev;
+      }
+      head = other.head;
+      tail = other.tail;
+      totalChunks = other.totalChunks;
+
+      other.head = nullptr;
+      other.tail = nullptr;
+      other.totalChunks = 0;
+    }
+    return *this;
+  }
 };
 
 #endif

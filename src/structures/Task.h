@@ -2,21 +2,13 @@
 
 #include "../structures/Position.h"
 
-struct Task
-{
-	Task(Position _at, Direction _dir, unsigned int _flag)
-	{
-		at = _at;
-		dir = _dir;
-		flag = _flag;
-	}
+struct Task {
+  Task(const Position at, const Direction dir, const unsigned int flag)
+      : at(at), dir(dir), flag(flag) {}
 
-	Task()
-	{
+  Task() = default;
 
-	}
-
-	Position at;
-	Direction dir;
-	unsigned int flag;
+  Position at{0, 0};
+  Direction dir{Direction::Uninitialized};
+  unsigned int flag{0};
 };

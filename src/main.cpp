@@ -1,109 +1,99 @@
 #include <iostream>
 #include <vector>
-#include <exception>
 
 #include "maze/Maze.h"
 
-#include "solvers/MazeSolverDFS.h"
 #include "solvers/MazeSolverBFS.h"
+#include "solvers/MazeSolverDFS.h"
 #include "solvers/MultiThreadedSolver.h"
 
 #include "utils/Timer.h"
+#include <filesystem>
 
 #define INPUT_NAME_SIZE 64
 
+namespace fs = std::filesystem;
 
+int main(int argc, char *argv[]) {
+  char inFileName[INPUT_NAME_SIZE] = "mazes/Maze20Kx20K_D.data";
+  Timer aTimer;
+  Timer bTimer;
+  Timer cTimer;
 
-int main(int argc, char* argv[])
-{
-	char inFileName[INPUT_NAME_SIZE] = "mazes/Maze15Kx15K_J.data";
+  std::cout << "\n";
+  std::cout << "\n" << "Maze: start" << "(" << inFileName << ") ------------\n";
 
-	Timer aTimer;
-	Timer bTimer;
-	Timer cTimer;
+  Maze *pMaze;
 
-	std::cout << "\n";
-	std::cout << "\n" << "Maze: start" << "(" << inFileName << ") ------------\n";
+  // MazeSolverBFS: Start
+  std::cout << "\n Maze: MazeSolverBFS\n";
 
-	Maze* pMaze;
+  pMaze = new Maze();
+  pMaze->Load(inFileName);
 
-	// MazeSolverBFS: Start
-	std::cout << "\n Maze: MazeSolverBFS\n";
+  aTimer.start(); // DFS timer start
+  MazeSolverBFS solverBFS(pMaze);
+  std::vector<Direction> *pSolutionBFS = solverBFS.Solve();
+  aTimer.stop(); // DFS timer end
 
-	pMaze = new Maze();
-	pMaze->Load(inFileName);
+  if (pSolutionBFS == nullptr) {
+    std::cout << "Solution is nullptr" << std::endl;
+    return -1;
+  }
 
-	aTimer.start(); // DFS timer start
-	MazeSolverBFS solverBFS(pMaze);
-	std::vector<Direction>* pSolutionBFS = solverBFS.Solve();
-	aTimer.stop(); // DFS timer end
-    
+  pMaze->checkSolution(*pSolutionBFS);
 
-    if(pSolutionBFS == nullptr)
-    {
-        std::cout << "Solution is nullptr" << std::endl;
-        return -1;
-    }
+  delete pSolutionBFS;
+  delete pMaze;
+  //---------------------------- (End)
 
-	pMaze->checkSolution(*pSolutionBFS);
+  // MazeSolverDFS: Start
+  std::cout << "\n Maze: MazeSolverDFS\n";
 
-	delete pSolutionBFS;
-	delete pMaze;
-	//---------------------------- (End)
+  pMaze = new Maze();
+  pMaze->Load(inFileName);
 
+  bTimer.start(); // DFS timer start
+  MazeSolverDFS solverDFS(pMaze);
+  std::vector<Direction> *pSolutionDFS = solverDFS.Solve();
+  bTimer.stop(); // DFS timer end
 
+  pMaze->checkSolution(*pSolutionDFS);
 
-	// MazeSolverDFS: Start
-	std::cout << "\n Maze: MazeSolverDFS\n";
+  delete pSolutionDFS;
+  delete pMaze;
+  //---------------------------- (End)
 
-	pMaze = new Maze();
-	pMaze->Load(inFileName);
+  // MazeSolverMT: Start
+  std::cout << "\n Maze: MazeSolverMT\n";
 
-	bTimer.start(); // DFS timer start
-	MazeSolverDFS solverDFS(pMaze);
-	std::vector<Direction>* pSolutionDFS = solverDFS.Solve();
-	bTimer.stop(); // DFS timer end
+  pMaze = new Maze();
+  pMaze->Load(inFileName);
 
-	pMaze->checkSolution(*pSolutionDFS);
+  cTimer.start(); // MT timer start
+  MultiThreadedSolver solverMT(pMaze);
+  std::vector<Direction> *pSolutionMT = solverMT.Solve();
+  cTimer.stop(); // MT timer end
 
-	delete pSolutionDFS;
-	delete pMaze;
-	//---------------------------- (End)
+  pMaze->checkSolution(*pSolutionMT);
 
+  delete pSolutionMT;
+  delete pMaze;
+  //---------------------------- (End)
 
+  // ----------Results----------
+  double bfsSeconds = aTimer.elapsedSeconds();
+  double dfsSeconds = bTimer.elapsedSeconds();
+  double mtSeconds = cTimer.elapsedSeconds();
 
+  double bfsMilliseconds = aTimer.elapsedSeconds();
+  double dfsMilliseconds = bTimer.elapsedSeconds();
+  double mtMilliseconds = cTimer.elapsedSeconds();
 
-	// MazeSolverMT: Start
-	std::cout << "\n Maze: MazeSolverMT\n";
+  std::cout << "\n";
 
-	pMaze = new Maze();
-	pMaze->Load(inFileName);
-
-	cTimer.start(); // MT timer start
-	MultiThreadedSolver solverMT(pMaze);
-	std::vector<Direction>* pSolutionMT = solverMT.Solve();
-	cTimer.stop(); // MT timer end
-
-	pMaze->checkSolution(*pSolutionMT);
-
-	delete pSolutionMT;
-	delete pMaze;
-	//---------------------------- (End)
-
-	// ----------Results----------
-	double bfsSeconds = aTimer.elapsedSeconds();
-	double dfsSeconds = bTimer.elapsedSeconds();
-	double mtSeconds = cTimer.elapsedSeconds();
-
-	double bfsMilliseconds = aTimer.elapsedSeconds();
-	double dfsMilliseconds = bTimer.elapsedSeconds();
-	double mtMilliseconds = cTimer.elapsedSeconds();
-
-	std::cout << "\n";
-
-	std::cout << "Results(" << inFileName << "):" << std::endl;
-	std::cout << "BFS Time: " << bfsSeconds << "s" << std::endl;
-	std::cout << "DFS Time: " << dfsSeconds << "s" << std::endl;
-	std::cout << "MT  Time: " << mtSeconds << "s" << std::endl;
-
+  std::cout << "Results(" << inFileName << "):" << std::endl;
+  std::cout << "BFS Time: " << bfsSeconds << "s" << std::endl;
+  std::cout << "DFS Time: " << dfsSeconds << "s" << std::endl;
+  std::cout << "MT  Time: " << mtSeconds << "s" << std::endl;
 }

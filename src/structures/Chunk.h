@@ -2,43 +2,24 @@
 #define CHUNK_H
 
 #include <array>
-#include "Task.h"
+
 #include "../constants.h"
-struct Chunk
-{
-	Chunk* next = nullptr;
-	Chunk* prev = nullptr;
-	unsigned int top = 0;
-    std::array<Task,CHUNK_CAPACITY> data;
-	char padding[4];
+#include "Task.h"
 
+struct Chunk {
+  void push(const Task t) { data[top++] = t; }
+  Task pop() { return data[top--]; }
+  ~Chunk() = default;
 
-	bool isEmpty()
-	{
-		return top == 0;
-	}
+  [[nodiscard]] bool isEmpty() const { return top == 0; }
+  [[nodiscard]] bool isFull() const { return top == CHUNK_CAPACITY; }
+  [[nodiscard]] size_t size() const { return top; }
 
-	bool isFull()
-	{
-		return top == CHUNK_CAPACITY;
-	}
-
-	void push(Task t)
-	{
-		data[top++] = t;
-	}
-
-	size_t size()
-	{
-		return top;
-	}
-
-	Task pop()
-	{
-		return data[top--];
-	}
-
-	~Chunk() = default;
+  // data:
+  Chunk *next{nullptr};
+  Chunk *prev{nullptr};
+  unsigned int top{0};
+  std::array<Task, CHUNK_CAPACITY> data;
 };
 
 #endif

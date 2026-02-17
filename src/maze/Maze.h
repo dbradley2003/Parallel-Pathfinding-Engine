@@ -6,47 +6,39 @@
 #include <vector>
 
 #include "../structures/Position.h"
-#include "Direction.h"
 #include "Choice.h"
+#include "Direction.h"
 
 #define DEBUG_PRINT 0
 
-// Maze cells are (row,col) starting at (0,0)
-// Linear storage of integers 0 to (width*height - 1)
-// Upper Upper corner (0,0) or index 0
-// Lower Left corner (width-1, height-1) or (width*height - 1)
-
-class Maze
-{
+class Maze {
 public:
+  Maze();
+  Maze(const Maze &) = delete;
+  Maze &operator=(const Maze &) = delete;
+  ~Maze();
 
-	Maze();
-	Maze(const Maze&) = delete;
-	Maze& operator = (const Maze&) = delete;
-	~Maze();
+  Maze(int _width, int _height);
+  void Load(const std::string &fileName);
 
+  ListDirection getMoves(Position pos);
+  bool canMove(Position pos, Direction dir);
+  bool checkSolution(std::vector<Direction> &soln);
 
-	
-	Maze(int _width, int _height);
-	void Load(const std::string& fileName);
+  Position getStart();
+  Position getEnd();
+  ;
 
-	ListDirection getMoves(Position pos);
-	bool canMove(Position pos, Direction dir);
-	bool checkSolution(std::vector<Direction>& soln);
+  void setEast(Position pos);
+  void setSouth(Position pos);
+  unsigned int getCell(Position pos);
+  void setCell(Position pos, unsigned int val);
 
-	Position getStart();
-	Position getEnd();;
-
-	void setEast(Position pos);
-	void setSouth(Position pos);
-	unsigned int getCell(Position pos);
-	void setCell(Position pos, unsigned int val);
-
-	// data:
-	std::atomic_uint* poMazeData;
-	int height;
-	int width;
-	int solvable;
+  // data:
+  std::atomic_uint *poMazeData;
+  int height;
+  int width;
+  int solvable;
 };
 
 #endif
